@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>DualShot</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --accent: #ff3c5f;
+      --accent2: #ff8c42;
+      --text: #f0f0f0;
+      --muted: #666;
+      --border: rgba(255,255,255,0.1);
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%; height: 100%;
+      background: #000; color: var(--text);
+      font-family: 'Syne', sans-serif;
+      overflow: hidden;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+
+    /* Full-screen display canvas */
+    #mainCanvas {
+      position: fixed; inset: 0;
+      width: 100%; height: 100%;
+      display: block; background: #000;
+    }
+
+    /* Off-screen recording elements */
+    #srcVideo, #horizontal, #vertical {
+      position: fixed; left: -9999px; top: -9999px;
+      visibility: hidden; pointer-events: none;
+    }
+
+    /* ── PiP vertical preview ── */
+    .pip {
+      position: fixed; top: 72px; right: 14px;
+      width: clamp(68px, 20vw, 104px);
+      aspect-ratio: 9/16;
+      border-radius: 12px; overflow: hidden;
+      border: 2px solid rgba(255,60,95,0.65);
+      box-shadow: 0 4px 20px rgba(0,0,0,0.8);
+      z-index: 20; cursor: pointer;
+      transition: opacity 0.3s;
+    }
+    .pip canvas { width: 100%; height: 100%; display: block; }
+    .pip-label {
+      position: absolute; bottom: 0; left: 0; right: 0;
+      background: linear-gradient(transparent, rgba(0,0,0,0.8));
+      font-family: 'DM Mono', monospace; font-size: 7px; letter-spacing: 1px;
+      color: rgba(255,255,255,0.75); text-align: center; padding: 10px 0 4px;
+    }
+    .pip-tag {
+      position: absolute; top: 5px; left: 5px;
+      font-family: 'DM Mono', monospace; font-size: 7px; letter-spacing: 0.5px;
+      background: rgba(255,60,95,0.85); color: #fff;
+      padding: 2px 5px; border-radius: 4px;
+    }
+
+    /* ── Header ── */
+    header {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 30;
+      display: flex; align-items: center; justify-content: space-between;
+      padding-top: max(env(safe-area-inset-top, 0px), 12px);
+      padding-left: 16px; padding-right: 16px; padding-bottom: 12px;
+      background: linear-gradient(to bottom, rgba(0,0,0,0.72), transparent);
+      pointer-events: none;
+    }
+    .logo {
+      font-size: 18px; font-weight: 800; letter-spacing: -0.5px;
+      background: linear-gradient(135deg, #fff 30%, var(--accent) 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .status-pill {
+      display: flex; align-items: center; gap: 6px;
+      background: rgba(0,0,0,0.5); backdrop-filter: blur(12px);
+      border: 1px solid var(--border); border-radius: 999px;
+      padding: 5px 11px;
+      font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.5px;
+      pointer-events: auto;
+    }
+    .sdot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: #555; transition: background 0.3s; flex-shrink: 0;
+    }
+    .sdot.live { background: var(--accent); animation: sp 1.2s infinite; }
+    @keyframes sp {
+      0%,100%{box-shadow:0 0 0 0 rgba(255,60,95,0.6)}
+      50%{box-shadow:0 0 0 4px rgba(255,60,95,0)}
+    }
+
+    /* ── REC timer ── */
+    .rec-timer {
+      position: fixed; top: 0; left: 50%; transform: translateX(-50%);
+      padding-top: max(env(safe-area-inset-top, 0px), 14px);
+      z-index: 35; pointer-events: none;
+      opacity: 0; transition: opacity 0.3s;
+    }
+    .rec-timer.show { opacity: 1; }
+    .rec-inner {
+      display: flex; align-items: center; gap: 7px;
+      background: rgba(255,60,95,0.9); backdrop-filter: blur(8px);
+      padding: 5px 14px; border-radius: 999px;
+      font-family: 'DM Mono', monospace; font-size: 13px; color: #fff;
+    }
+    .rec-dot { width: 7px; height: 7px; border-radius: 50%; background: #fff; animation: blink 1s infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+
+    /* ── View tabs ── */
+    .vtabs {
+      position: fixed; bottom: 138px; left: 50%; transform: translateX(-50%);
+      z-index: 25; display: flex;
+      background: rgba(0,0,0,0.5); backdrop-filter: blur(14px);
+      border: 1px solid var(--border); border-radius: 999px; padding: 3px;
+    }
+    .vtab {
+      font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 1px;
+      padding: 6px 16px; border-radius: 999px; cursor: pointer;
+      color: rgba(255,255,255,0.45); border: none; background: transparent;
+      transition: all 0.2s;
+    }
+    .vtab.active { background: rgba(255,255,255,0.13); color: #fff; }
+
+    /* ── Controls bar ── */
+    .controls {
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 30;
+      padding: 18px 28px;
+      padding-bottom: max(env(safe-area-inset-bottom, 18px), 28px);
+      background: linear-gradient(to top, rgba(0,0,0,0.85), transparent);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .btn-side {
+      width: 50px; height: 50px; border-radius: 50%;
+      border: 1.5px solid rgba(255,255,255,0.18);
+      background: rgba(0,0,0,0.45); backdrop-filter: blur(8px);
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; color: #fff; transition: all 0.18s;
+    }
+    .btn-side:active { transform: scale(0.9); background: rgba(255,255,255,0.12); }
+    .btn-side svg { width: 19px; height: 19px; }
+    .btn-record {
+      width: 78px; height: 78px; border-radius: 50%;
+      border: 3px solid rgba(255,255,255,0.22);
+      background: transparent;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; transition: all 0.15s;
+    }
+    .btn-record:active { transform: scale(0.92); }
+    .rec-core {
+      width: 56px; height: 56px; border-radius: 50%;
+      background: var(--accent);
+      transition: all 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
+      box-shadow: 0 0 24px rgba(255,60,95,0.45);
+    }
+    .btn-record.recording { border-color: rgba(255,60,95,0.5); }
+    .btn-record.recording .rec-core { border-radius: 10px; width: 32px; height: 32px; }
+
+    /* ── Downloads sheet ── */
+    .dl-sheet {
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 50;
+      background: #0c0c10; border-top: 1px solid rgba(255,255,255,0.07);
+      border-radius: 22px 22px 0 0;
+      padding: 0 18px;
+      padding-bottom: max(env(safe-area-inset-bottom, 18px), 28px);
+      transform: translateY(100%);
+      transition: transform 0.38s cubic-bezier(0.32, 0.72, 0, 1);
+    }
+    .dl-sheet.open { transform: translateY(0); }
+    .handle { width: 36px; height: 4px; border-radius: 2px; background: rgba(255,255,255,0.14); margin: 14px auto 18px; }
+    .sheet-title { font-size: 10px; letter-spacing: 2px; color: var(--muted); text-transform: uppercase; margin-bottom: 14px; }
+    .dl-row { display: flex; gap: 12px; margin-bottom: 12px; }
+    .dl-card {
+      flex: 1; display: flex; flex-direction: column; align-items: center; gap: 10px;
+      background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 16px; padding: 18px 12px;
+      text-decoration: none; color: var(--text); cursor: pointer;
+      transition: all 0.18s; animation: su 0.4s ease both;
+    }
+    .dl-card:nth-child(2) { animation-delay: 0.07s; }
+    @keyframes su { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:none} }
+    .dl-card:active { background: rgba(255,255,255,0.08); transform: scale(0.97); }
+    .dl-ico {
+      width: 44px; height: 44px; border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .dl-ico.h { background: rgba(255,140,66,0.14); color: var(--accent2); }
+    .dl-ico.v { background: rgba(255,60,95,0.14); color: var(--accent); }
+    .dl-ico svg { width: 20px; height: 20px; }
+    .dl-name { font-size: 13px; font-weight: 700; }
+    .dl-meta { font-family: 'DM Mono', monospace; font-size: 9px; color: var(--muted); text-align: center; }
+    .dl-save {
+      display: flex; align-items: center; gap: 5px;
+      background: rgba(255,255,255,0.08); border-radius: 999px;
+      padding: 5px 12px; font-size: 11px; font-weight: 700; color: #fff; margin-top: 2px;
+    }
+    .btn-done {
+      width: 100%; padding: 14px;
+      background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 14px; color: var(--muted);
+      font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700;
+      cursor: pointer; transition: all 0.18s;
+    }
+    .btn-done:active { background: rgba(255,255,255,0.1); }
+
+    /* ── Toast ── */
+    .toast {
+      position: fixed; bottom: 130px; left: 50%;
+      transform: translateX(-50%) translateY(8px);
+      background: rgba(18,18,22,0.92); backdrop-filter: blur(14px);
+      border: 1px solid var(--border); border-radius: 999px;
+      padding: 9px 18px; font-size: 12px; color: var(--text);
+      opacity: 0; pointer-events: none; white-space: nowrap;
+      transition: all 0.25s; z-index: 40;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    /* ── Init overlay ── */
+    .init {
+      position: fixed; inset: 0; z-index: 100; background: #000;
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; gap: 16px; padding: 40px; text-align: center;
+    }
+    .init.hide { animation: fo 0.35s forwards; }
+    @keyframes fo { to { opacity: 0; } }
+    .init-icon {
+      width: 80px; height: 80px; border-radius: 28px;
+      background: linear-gradient(135deg, var(--accent2), var(--accent));
+      display: flex; align-items: center; justify-content: center; margin-bottom: 4px;
+      box-shadow: 0 12px 40px rgba(255,60,95,0.35);
+    }
+    .init-icon svg { width: 38px; height: 38px; color: #fff; }
+    .init-title { font-size: 30px; font-weight: 800; letter-spacing: -1px; }
+    .init-sub { font-size: 13px; color: var(--muted); line-height: 1.7; max-width: 240px; }
+    .chips { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin: 4px 0; }
+    .chip {
+      font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.5px;
+      padding: 4px 10px; border-radius: 999px;
+      background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+      color: rgba(255,255,255,0.55);
+    }
+    .btn-allow {
+      background: var(--accent); color: #fff; border: none; border-radius: 16px;
+      padding: 16px 0; font-size: 16px; font-weight: 800;
+      font-family: 'Syne', sans-serif; cursor: pointer; margin-top: 8px;
+      width: 100%; max-width: 280px;
+      box-shadow: 0 8px 28px rgba(255,60,95,0.4); transition: all 0.18s;
+    }
+    .btn-allow:active { transform: scale(0.96); }
+    .init-err { font-size: 11px; color: #ff6b6b; font-family: 'DM Mono', monospace; min-height: 16px; }
+  </style>
+</head>
+<body>
+
+<!-- Off-screen source + recording canvases -->
+<video id="srcVideo" autoplay playsinline muted></video>
+<canvas id="horizontal"></canvas>
+<canvas id="vertical"></canvas>
+
+<!-- Full-screen display -->
+<canvas id="mainCanvas"></canvas>
+
+<!-- PiP vertical preview -->
+<div class="pip" id="pip">
+  <canvas id="pipCanvas"></canvas>
+  <div class="pip-tag">9:16</div>
+  <div class="pip-label">VERTICAL</div>
+</div>
+
+<!-- Header -->
+<header>
+  <div class="logo">DualShot</div>
+  <div class="status-pill">
+    <div class="sdot" id="sdot"></div>
+    <span id="statusTxt">READY</span>
+  </div>
+</header>
+
+<!-- REC Timer -->
+<div class="rec-timer" id="recTimer">
+  <div class="rec-inner">
+    <div class="rec-dot"></div>
+    <span id="timerDisp">00:00</span>
+  </div>
+</div>
+
+<!-- View tabs -->
+<div class="vtabs">
+  <button class="vtab active" id="tabH" onclick="setView('h')">16 : 9</button>
+  <button class="vtab" id="tabV" onclick="setView('v')">9 : 16</button>
+</div>
+
+<!-- Controls -->
+<div class="controls">
+  <button class="btn-side" id="btnFlip">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+      <path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/>
+    </svg>
+  </button>
+
+  <div class="btn-record" id="btnRecord">
+    <div class="rec-core"></div>
+  </div>
+
+  <button class="btn-side" id="btnAction">
+    <!-- icon swaps between guide and download -->
+    <svg id="iconGuide" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+      <rect x="3" y="3" width="18" height="18" rx="2"/>
+      <line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/>
+    </svg>
+    <svg id="iconDl" style="display:none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+      <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+      <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+    </svg>
+  </button>
+</div>
+
+<!-- Downloads sheet -->
+<div class="dl-sheet" id="dlSheet">
+  <div class="handle"></div>
+  <div class="sheet-title">Recordings ready</div>
+  <div class="dl-row">
+    <a class="dl-card" id="dlH" download="horizontal_16x9.webm">
+      <div class="dl-ico h">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="2" y="6" width="20" height="12" rx="2"/>
+        </svg>
+      </div>
+      <div class="dl-name">Horizontal</div>
+      <div class="dl-meta" id="dlHmeta">1280 × 720</div>
+      <div class="dl-save">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="11" height="11">
+          <path d="M12 17V3"/><path d="M7 12l5 5 5-5"/>
+        </svg>Save
+      </div>
+    </a>
+    <a class="dl-card" id="dlV" download="vertical_9x16.webm">
+      <div class="dl-ico v">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="6" y="2" width="12" height="20" rx="2"/>
+        </svg>
+      </div>
+      <div class="dl-name">Vertical</div>
+      <div class="dl-meta" id="dlVmeta">720 × 1280</div>
+      <div class="dl-save">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="11" height="11">
+          <path d="M12 17V3"/><path d="M7 12l5 5 5-5"/>
+        </svg>Save
+      </div>
+    </a>
+  </div>
+  <button class="btn-done" id="btnDone">Close</button>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<!-- Init overlay -->
+<div class="init" id="initOverlay">
+  <div class="init-icon">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/>
+    </svg>
+  </div>
+  <div class="init-title">DualShot</div>
+  <div class="init-sub">Record 16:9 &amp; 9:16 at the same time. One take, both formats.</div>
+  <div class="chips">
+    <span class="chip">16:9 Full Frame</span>
+    <span class="chip">9:16 Center Crop</span>
+    <span class="chip">Live PiP</span>
+    <span class="chip">4K Source</span>
+  </div>
+  <button class="btn-allow" id="btnAllow">Allow Camera</button>
+  <div class="init-err" id="initErr"></div>
+</div>
+
+<script>
+  const srcVideo   = document.getElementById('srcVideo');
+  const hCanvas    = document.getElementById('horizontal');
+  const vCanvas    = document.getElementById('vertical');
+  const mainCanvas = document.getElementById('mainCanvas');
+  const pipCanvas  = document.getElementById('pipCanvas');
+  const hCtx = hCanvas.getContext('2d');
+  const vCtx = vCanvas.getContext('2d');
+  const mCtx = mainCanvas.getContext('2d');
+  const pCtx = pipCanvas.getContext('2d');
+
+  // Recording canvas sizes
+  hCanvas.width = 1280; hCanvas.height = 720;
+  vCanvas.width = 720;  vCanvas.height = 1280;
+  pipCanvas.width = 270; pipCanvas.height = 480;
+
+  let stream = null, facingMode = 'environment';
+  let hRecorder, vRecorder, hChunks = [], vChunks = [];
+  let recording = false, hDone = false, vDone = false;
+  let timerInterval = null, elapsed = 0;
+  let rafId = null, guideOn = true, currentView = 'h';
+  let hasRecording = false;
+
+  // ── Resize main canvas ──
+  function resize() {
+    mainCanvas.width  = window.innerWidth;
+    mainCanvas.height = window.innerHeight;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // ── Render loop ──
+  // Mobile cameras often deliver portrait frames (w < h) even for "landscape" capture.
+  // We normalise everything to a logical landscape frame first, then derive crops.
+  function startRender() {
+    if (rafId) cancelAnimationFrame(rafId);
+
+    // Offscreen buffer we use to produce a properly-oriented landscape frame
+    const normCanvas = document.createElement('canvas');
+    const normCtx    = normCanvas.getContext('2d');
+
+    (function render() {
+      if (srcVideo.readyState >= 2) {
+        const vw = srcVideo.videoWidth, vh = srcVideo.videoHeight;
+        const isPortrait = vh > vw; // mobile rear cam delivers portrait stream
+
+        // ── Step 1: normalise to landscape ──
+        // lw × lh is always the logical landscape size
+        const lw = isPortrait ? vh : vw;
+        const lh = isPortrait ? vw : vh;
+
+        if (normCanvas.width !== lw || normCanvas.height !== lh) {
+          normCanvas.width  = lw;
+          normCanvas.height = lh;
+        }
+
+        normCtx.save();
+        if (isPortrait) {
+          // rotate 90° CW: translate to right edge, rotate, draw
+          normCtx.translate(lw, 0);
+          normCtx.rotate(Math.PI / 2);
+          normCtx.drawImage(srcVideo, 0, 0, vw, vh);
+        } else {
+          normCtx.drawImage(srcVideo, 0, 0, vw, vh);
+        }
+        normCtx.restore();
+
+        // ── Step 2: derive 9:16 vertical crop from landscape frame ──
+        // 9:16 crop width from a landscape frame = lh * (9/16)
+        const cropW = Math.round(lh * 9 / 16);
+        const cropX = Math.round((lw - cropW) / 2);
+
+        // ── Step 3: write to recording canvases ──
+        // Horizontal: full landscape frame → 1280×720
+        hCtx.drawImage(normCanvas, 0, 0, lw, lh, 0, 0, 1280, 720);
+
+        // Vertical: center crop → 720×1280
+        vCtx.drawImage(normCanvas, cropX, 0, cropW, lh, 0, 0, 720, 1280);
+
+        // PiP canvas (vertical crop small)
+        pCtx.drawImage(normCanvas, cropX, 0, cropW, lh, 0, 0, 270, 480);
+
+        // ── Step 4: draw main display canvas ──
+        const mw = mainCanvas.width, mh = mainCanvas.height;
+        mCtx.clearRect(0, 0, mw, mh);
+
+        if (currentView === 'h') {
+          // Show full landscape frame, cover-fit into screen
+          coverFit(mCtx, normCanvas, lw, lh, mw, mh);
+          if (guideOn) drawGuide(mCtx, mw, mh, lw, lh, cropX, cropW);
+        } else {
+          // Show 9:16 vertical crop centred on screen
+          mCtx.fillStyle = '#000';
+          mCtx.fillRect(0, 0, mw, mh);
+          const dw = Math.min(mw, mh * 9 / 16);
+          const dh = dw * 16 / 9;
+          mCtx.drawImage(normCanvas, cropX, 0, cropW, lh,
+            (mw - dw) / 2, (mh - dh) / 2, dw, dh);
+        }
+      }
+      rafId = requestAnimationFrame(render);
+    })();
+  }
+
+  // Cover-fit: scale src to fill dw×dh (crops if needed, centred)
+  function coverFit(ctx, src, sw, sh, dw, dh) {
+    const sr = sw / sh, dr = dw / dh;
+    let W, H;
+    if (sr > dr) { H = dh; W = dh * sr; }
+    else         { W = dw; H = dw / sr; }
+    ctx.drawImage(src, 0, 0, sw, sh, (dw - W) / 2, (dh - H) / 2, W, H);
+  }
+
+  function drawGuide(ctx, mw, mh, lw, lh, cropX, cropW) {
+    // Find where the landscape frame sits on screen after coverFit
+    const sr = lw / lh, dr = mw / mh;
+    let W, H, ox, oy;
+    if (sr > dr) { H = mh; W = mh * sr; ox = (mw - W) / 2; oy = 0; }
+    else         { W = mw; H = mw / sr; ox = 0; oy = (mh - H) / 2; }
+
+    const scaleX = W / lw;
+    const left   = ox + cropX * scaleX;
+    const cw     = cropW * scaleX;
+
+    ctx.save();
+    // dim the non-crop sides
+    ctx.fillStyle = 'rgba(0,0,0,0.42)';
+    ctx.fillRect(ox, oy, left - ox, H);
+    ctx.fillRect(left + cw, oy, (ox + W) - (left + cw), H);
+    // dashed border
+    ctx.strokeStyle = 'rgba(255,140,66,0.8)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6, 5]);
+    ctx.strokeRect(left + 0.75, oy + 0.75, cw - 1.5, H - 1.5);
+    ctx.setLineDash([]);
+    // label
+    ctx.fillStyle = 'rgba(255,140,66,0.95)';
+    ctx.font = '500 10px "DM Mono", monospace';
+    ctx.fillText('9:16 CROP', left + 8, oy + 18);
+    ctx.restore();
+  }
+
+  // ── View ──
+  function setView(v) {
+    currentView = v;
+    document.getElementById('tabH').classList.toggle('active', v==='h');
+    document.getElementById('tabV').classList.toggle('active', v==='v');
+    document.getElementById('pip').style.display = v==='h' ? 'block' : 'none';
+  }
+
+  // ── Camera ──
+  async function initCamera(facing) {
+    if (stream) stream.getTracks().forEach(t=>t.stop());
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode:{ideal:facing}, width:{ideal:1920}, height:{ideal:1080} },
+        audio: true
+      });
+      srcVideo.srcObject = stream;
+      await new Promise(r => srcVideo.onloadedmetadata = r);
+      srcVideo.play();
+      startRender();
+      return true;
+    } catch { return false; }
+  }
+
+  // ── Timer ──
+  function startTimer() {
+    elapsed = 0;
+    timerInterval = setInterval(() => {
+      elapsed++;
+      document.getElementById('timerDisp').textContent =
+        `${String(Math.floor(elapsed/60)).padStart(2,'0')}:${String(elapsed%60).padStart(2,'0')}`;
+    }, 1000);
+  }
+
+  // ── Toast ──
+  function toast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.classList.add('show');
+    setTimeout(()=>t.classList.remove('show'), 2200);
+  }
+
+  // ── Codec ──
+  function bestMime() {
+    return ['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm','video/mp4']
+      .find(t=>MediaRecorder.isTypeSupported(t)) || '';
+  }
+
+  // ── Record ──
+  function startRecording() {
+    hChunks=[]; vChunks=[]; hDone=vDone=false;
+    const mime=bestMime();
+    const opts=mime?{mimeType:mime,videoBitsPerSecond:8_000_000}:{videoBitsPerSecond:8_000_000};
+    const audio=stream.getAudioTracks();
+    const hs=hCanvas.captureStream(30), vs=vCanvas.captureStream(30);
+    audio.forEach(t=>{hs.addTrack(t);vs.addTrack(t);});
+    try { hRecorder=new MediaRecorder(hs,opts); vRecorder=new MediaRecorder(vs,opts); }
+    catch { hRecorder=new MediaRecorder(hs); vRecorder=new MediaRecorder(vs); }
+    hRecorder.ondataavailable=e=>{if(e.data.size>0)hChunks.push(e.data);};
+    vRecorder.ondataavailable=e=>{if(e.data.size>0)vChunks.push(e.data);};
+    hRecorder.onstop=()=>{hDone=true;finalize();};
+    vRecorder.onstop=()=>{vDone=true;finalize();};
+    hRecorder.start(100); vRecorder.start(100);
+    recording=true;
+    document.getElementById('btnRecord').classList.add('recording');
+    document.getElementById('recTimer').classList.add('show');
+    document.getElementById('sdot').classList.add('live');
+    document.getElementById('statusTxt').textContent='REC';
+    document.getElementById('iconGuide').style.display='block';
+    document.getElementById('iconDl').style.display='none';
+    startTimer();
+    toast('Recording both formats…');
+  }
+
+  function stopRecording() {
+    hRecorder.stop(); vRecorder.stop();
+    recording=false;
+    document.getElementById('btnRecord').classList.remove('recording');
+    document.getElementById('recTimer').classList.remove('show');
+    document.getElementById('sdot').classList.remove('live');
+    document.getElementById('statusTxt').textContent='SAVING…';
+    clearInterval(timerInterval);
+  }
+
+  function finalize() {
+    if (!hDone||!vDone) return;
+    const mime=bestMime()||'video/webm';
+    const ext=mime.includes('mp4')?'mp4':'webm';
+    const hBlob=new Blob(hChunks,{type:mime});
+    const vBlob=new Blob(vChunks,{type:mime});
+    document.getElementById('dlH').href=URL.createObjectURL(hBlob);
+    document.getElementById('dlH').download=`horizontal_16x9.${ext}`;
+    document.getElementById('dlV').href=URL.createObjectURL(vBlob);
+    document.getElementById('dlV').download=`vertical_9x16.${ext}`;
+    document.getElementById('dlHmeta').textContent=`1280×720 · ${(hBlob.size/1048576).toFixed(1)}MB`;
+    document.getElementById('dlVmeta').textContent=`720×1280 · ${(vBlob.size/1048576).toFixed(1)}MB`;
+    document.getElementById('statusTxt').textContent='READY';
+    document.getElementById('iconGuide').style.display='none';
+    document.getElementById('iconDl').style.display='block';
+    hasRecording=true;
+    toast('Done! Tap ↓ to save your videos');
+  }
+
+  // ── Button events ──
+  document.getElementById('btnRecord').addEventListener('click', ()=>{
+    if (!stream) return;
+    recording ? stopRecording() : startRecording();
+  });
+
+  document.getElementById('btnFlip').addEventListener('click', async ()=>{
+    if (recording){toast('Stop recording first');return;}
+    facingMode=facingMode==='environment'?'user':'environment';
+    toast(facingMode==='user'?'Front camera':'Rear camera');
+    await initCamera(facingMode);
+  });
+
+  document.getElementById('btnAction').addEventListener('click', ()=>{
+    if (hasRecording && !recording) {
+      document.getElementById('dlSheet').classList.add('open');
+    } else {
+      guideOn=!guideOn;
+      toast(guideOn?'Guide on':'Guide off');
+    }
+  });
+
+  document.getElementById('btnDone').addEventListener('click', ()=>{
+    document.getElementById('dlSheet').classList.remove('open');
+  });
+
+  // Swipe sheet down to close
+  const sheet=document.getElementById('dlSheet');
+  let sy0=0;
+  sheet.addEventListener('touchstart',e=>{sy0=e.touches[0].clientY;},{passive:true});
+  sheet.addEventListener('touchmove',e=>{
+    const dy=e.touches[0].clientY-sy0;
+    if(dy>0) sheet.style.transform=`translateY(${dy}px)`;
+  },{passive:true});
+  sheet.addEventListener('touchend',e=>{
+    sheet.style.transform='';
+    if(e.changedTouches[0].clientY-sy0>80) sheet.classList.remove('open');
+  });
+
+  // ── Init ──
+  document.getElementById('btnAllow').addEventListener('click', async ()=>{
+    const btn=document.getElementById('btnAllow');
+    btn.textContent='Opening…'; btn.disabled=true;
+    const ok=await initCamera(facingMode);
+    if(ok){
+      const o=document.getElementById('initOverlay');
+      o.classList.add('hide');
+      setTimeout(()=>o.remove(),380);
+    } else {
+      document.getElementById('initErr').textContent='Camera denied — check permissions';
+      btn.textContent='Try Again'; btn.disabled=false;
+    }
+  });
+</script>
+</body>
+</html>
