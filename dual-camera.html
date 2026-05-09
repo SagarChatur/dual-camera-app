@@ -406,86 +406,77 @@
   resize();
 
   // ── Set canvas sizes from actual stream resolution ──
+  // ── Canvas sizes from stream ──
+  // Phone held upright  → stream is portrait  (vw < vh): e.g. 1080×1920
+  // Phone held sideways → stream is landscape (vw > vh): e.g. 1920×1080
+  // We NEVER rotate — we use the stream as-is and just do the right crop math.
+  //
+  // Vertical  (9:16) recording = the portrait dimension of the source
+  //   • portrait stream  → full frame is already 9:16
+  //   • landscape stream → center-crop top/bottom to get 9:16
+  //
+  // Horizontal (16:9) recording = the landscape dimension of the source
+  //   • portrait stream  → center-crop left/right to get 16:9
+  //   • landscape stream → full frame is already 16:9
+
   function setupCanvasSizes() {
     const vw = srcVideo.videoWidth, vh = srcVideo.videoHeight;
-    const lw = vh > vw ? vh : vw;  // landscape width
-    const lh = vh > vw ? vw : vh;  // landscape height
 
-    // Horizontal canvas: native landscape resolution
-    hCanvas.width  = lw;
-    hCanvas.height = lh;
+    // Horizontal canvas: native width × (width * 9/16) height, landscape
+    const hW = Math.max(vw, vh);
+    const hH = Math.round(hW * 9 / 16);
+    hCanvas.width  = hW;
+    hCanvas.height = hH;
 
-    // Vertical canvas: 9:16 center crop at native res
-    const cropW = Math.round(lh * 9 / 16);
-    vCanvas.width  = cropW;
-    vCanvas.height = lh;
+    // Vertical canvas: (height * 9/16) width × native height, portrait
+    const vH = Math.max(vw, vh);
+    const vW = Math.round(vH * 9 / 16);
+    vCanvas.width  = vW;
+    vCanvas.height = vH;
 
-    // PiP: small display copy, ~1/4 of native
-    pipCanvas.width  = Math.round(cropW / 4);
-    pipCanvas.height = Math.round(lh / 4);
+    // PiP: display-only small copy of vertical
+    pipCanvas.width  = Math.round(vW / 4);
+    pipCanvas.height = Math.round(vH / 4);
   }
 
   // ── Render loop ──
-  // Mobile cameras often deliver portrait frames (w < h) even for "landscape" capture.
-  // We normalise everything to a logical landscape frame first, then derive crops.
   function startRender() {
     if (rafId) cancelAnimationFrame(rafId);
-
-    // Offscreen buffer we use to produce a properly-oriented landscape frame
-    const normCanvas = document.createElement('canvas');
-    const normCtx    = normCanvas.getContext('2d');
-
     (function render() {
       if (srcVideo.readyState >= 2) {
         const vw = srcVideo.videoWidth, vh = srcVideo.videoHeight;
-        const isPortrait = vh > vw; // mobile rear cam delivers portrait stream
 
-        // ── Step 1: normalise to landscape ──
-        // lw × lh is always the logical landscape size
-        const lw = isPortrait ? vh : vw;
-        const lh = isPortrait ? vw : vh;
+        // ── Crop math (no rotation ever) ──
+        // Horizontal 16:9: full width, crop height to width*(9/16)
+        const hSrcW = vw;
+        const hSrcH = Math.round(vw * 9 / 16);
+        const hSrcY = Math.round((vh - hSrcH) / 2);
 
-        if (normCanvas.width !== lw || normCanvas.height !== lh) {
-          normCanvas.width  = lw;
-          normCanvas.height = lh;
-        }
+        // Vertical 9:16: full height, crop width to height*(9/16)
+        const vSrcH = vh;
+        const vSrcW = Math.round(vh * 9 / 16);
+        const vSrcX = Math.round((vw - vSrcW) / 2);
 
-        normCtx.save();
-        if (isPortrait) {
-          // rotate 90° CW: translate to right edge, rotate, draw
-          normCtx.translate(lw, 0);
-          normCtx.rotate(Math.PI / 2);
-          normCtx.drawImage(srcVideo, 0, 0, vw, vh);
-        } else {
-          normCtx.drawImage(srcVideo, 0, 0, vw, vh);
-        }
-        normCtx.restore();
+        // ── Recording canvases ──
+        hCtx.drawImage(srcVideo, 0, hSrcY, hSrcW, hSrcH, 0, 0, hCanvas.width, hCanvas.height);
+        vCtx.drawImage(srcVideo, vSrcX, 0, vSrcW, vSrcH, 0, 0, vCanvas.width, vCanvas.height);
+        pCtx.drawImage(srcVideo, vSrcX, 0, vSrcW, vSrcH, 0, 0, pipCanvas.width, pipCanvas.height);
 
-        // ── Step 2: derive 9:16 vertical crop from landscape frame ──
-        // 9:16 crop width from a landscape frame = lh * (9/16)
-        const cropW = Math.round(lh * 9 / 16);
-        const cropX = Math.round((lw - cropW) / 2);
-
-        // ── Step 3: write to recording canvases ──
-        hCtx.drawImage(normCanvas, 0, 0, lw, lh, 0, 0, hCanvas.width, hCanvas.height);
-        vCtx.drawImage(normCanvas, cropX, 0, cropW, lh, 0, 0, vCanvas.width, vCanvas.height);
-        pCtx.drawImage(normCanvas, cropX, 0, cropW, lh, 0, 0, pipCanvas.width, pipCanvas.height);
-
-        // ── Step 4: draw main display canvas ──
+        // ── Main display canvas ──
         const mw = mainCanvas.width, mh = mainCanvas.height;
         mCtx.clearRect(0, 0, mw, mh);
 
         if (currentView === 'h') {
-          // Show full landscape frame, cover-fit into screen
-          coverFit(mCtx, normCanvas, lw, lh, mw, mh);
-          if (guideOn) drawGuide(mCtx, mw, mh, lw, lh, cropX, cropW);
+          // Show 16:9 crop of source, filling the screen
+          coverFit(mCtx, srcVideo, 0, hSrcY, hSrcW, hSrcH, mw, mh);
+          if (guideOn) drawGuide(mCtx, mw, mh, vSrcX, vSrcW, vSrcH, vw, vh);
         } else {
-          // Show 9:16 vertical crop centred on screen
+          // Show 9:16 crop of source, centred on screen
           mCtx.fillStyle = '#000';
           mCtx.fillRect(0, 0, mw, mh);
           const dw = Math.min(mw, mh * 9 / 16);
           const dh = dw * 16 / 9;
-          mCtx.drawImage(normCanvas, cropX, 0, cropW, lh,
+          mCtx.drawImage(srcVideo, vSrcX, 0, vSrcW, vSrcH,
             (mw - dw) / 2, (mh - dh) / 2, dw, dh);
         }
       }
@@ -493,41 +484,48 @@
     })();
   }
 
-  // Cover-fit: scale src to fill dw×dh (crops if needed, centred)
-  function coverFit(ctx, src, sw, sh, dw, dh) {
+  // Cover-fit a source region into destination rect (centred, no distortion)
+  function coverFit(ctx, src, sx, sy, sw, sh, dw, dh) {
     const sr = sw / sh, dr = dw / dh;
     let W, H;
     if (sr > dr) { H = dh; W = dh * sr; }
     else         { W = dw; H = dw / sr; }
-    ctx.drawImage(src, 0, 0, sw, sh, (dw - W) / 2, (dh - H) / 2, W, H);
+    ctx.drawImage(src, sx, sy, sw, sh, (dw - W) / 2, (dh - H) / 2, W, H);
   }
 
-  function drawGuide(ctx, mw, mh, lw, lh, cropX, cropW) {
-    // Find where the landscape frame sits on screen after coverFit
-    const sr = lw / lh, dr = mw / mh;
+  // Draw the 9:16 crop overlay on the 16:9 main view
+  function drawGuide(ctx, mw, mh, vSrcX, vSrcW, vSrcH, streamW, streamH) {
+    // The 16:9 display shows the full stream width, centre-cropped vertically.
+    // We need to map the 9:16 crop rect (vSrcX, 0, vSrcW, vSrcH) onto screen coords.
+    // The 16:9 source region is (0, hSrcY, streamW, streamW*9/16).
+    const hSrcH = Math.round(streamW * 9 / 16);
+    const hSrcY = Math.round((streamH - hSrcH) / 2);
+
+    // coverFit scale for the 16:9 source into mw×mh
+    const sr = streamW / hSrcH, dr = mw / mh;
     let W, H, ox, oy;
     if (sr > dr) { H = mh; W = mh * sr; ox = (mw - W) / 2; oy = 0; }
     else         { W = mw; H = mw / sr; ox = 0; oy = (mh - H) / 2; }
 
-    const scaleX = W / lw;
-    const left   = ox + cropX * scaleX;
-    const cw     = cropW * scaleX;
+    const scaleX = W / streamW;
+    const scaleY = H / hSrcH;
+
+    // vSrcX is in source coords; map to display coords
+    const left = ox + vSrcX * scaleX;
+    const cw   = vSrcW * scaleX;
 
     ctx.save();
-    // dim the non-crop sides
     ctx.fillStyle = 'rgba(0,0,0,0.42)';
     ctx.fillRect(ox, oy, left - ox, H);
     ctx.fillRect(left + cw, oy, (ox + W) - (left + cw), H);
-    // dashed border
-    ctx.strokeStyle = 'rgba(255,140,66,0.8)';
+    ctx.strokeStyle = 'rgba(255,140,66,0.85)';
     ctx.lineWidth = 1.5;
     ctx.setLineDash([6, 5]);
     ctx.strokeRect(left + 0.75, oy + 0.75, cw - 1.5, H - 1.5);
     ctx.setLineDash([]);
-    // label
     ctx.fillStyle = 'rgba(255,140,66,0.95)';
     ctx.font = '500 10px "DM Mono", monospace';
-    ctx.fillText('9:16 CROP', left + 8, oy + 18);
+    ctx.fillText('9:16', left + 8, oy + 18);
     ctx.restore();
   }
 
