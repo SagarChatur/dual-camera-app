@@ -330,7 +330,7 @@
         </svg>
       </div>
       <div class="dl-name">Horizontal</div>
-      <div class="dl-meta" id="dlHmeta">1280 × 720</div>
+      <div class="dl-meta" id="dlHmeta">16:9</div>
       <div class="dl-save">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="11" height="11">
           <path d="M12 17V3"/><path d="M7 12l5 5 5-5"/>
@@ -344,7 +344,7 @@
         </svg>
       </div>
       <div class="dl-name">Vertical</div>
-      <div class="dl-meta" id="dlVmeta">720 × 1280</div>
+      <div class="dl-meta" id="dlVmeta">9:16</div>
       <div class="dl-save">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="11" height="11">
           <path d="M12 17V3"/><path d="M7 12l5 5 5-5"/>
@@ -371,7 +371,7 @@
     <span class="chip">16:9 Full Frame</span>
     <span class="chip">9:16 Center Crop</span>
     <span class="chip">Live PiP</span>
-    <span class="chip">4K Source</span>
+    
   </div>
   <button class="btn-allow" id="btnAllow">Allow Camera</button>
   <div class="init-err" id="initErr"></div>
@@ -388,10 +388,7 @@
   const mCtx = mainCanvas.getContext('2d');
   const pCtx = pipCanvas.getContext('2d');
 
-  // Recording canvas sizes
-  hCanvas.width = 1280; hCanvas.height = 720;
-  vCanvas.width = 720;  vCanvas.height = 1280;
-  pipCanvas.width = 270; pipCanvas.height = 480;
+  // Canvas sizes set dynamically in setupCanvasSizes() after stream starts
 
   let stream = null, facingMode = 'environment';
   let hRecorder, vRecorder, hChunks = [], vChunks = [];
@@ -407,6 +404,26 @@
   }
   window.addEventListener('resize', resize);
   resize();
+
+  // ── Set canvas sizes from actual stream resolution ──
+  function setupCanvasSizes() {
+    const vw = srcVideo.videoWidth, vh = srcVideo.videoHeight;
+    const lw = vh > vw ? vh : vw;  // landscape width
+    const lh = vh > vw ? vw : vh;  // landscape height
+
+    // Horizontal canvas: native landscape resolution
+    hCanvas.width  = lw;
+    hCanvas.height = lh;
+
+    // Vertical canvas: 9:16 center crop at native res
+    const cropW = Math.round(lh * 9 / 16);
+    vCanvas.width  = cropW;
+    vCanvas.height = lh;
+
+    // PiP: small display copy, ~1/4 of native
+    pipCanvas.width  = Math.round(cropW / 4);
+    pipCanvas.height = Math.round(lh / 4);
+  }
 
   // ── Render loop ──
   // Mobile cameras often deliver portrait frames (w < h) even for "landscape" capture.
@@ -450,14 +467,9 @@
         const cropX = Math.round((lw - cropW) / 2);
 
         // ── Step 3: write to recording canvases ──
-        // Horizontal: full landscape frame → 1280×720
-        hCtx.drawImage(normCanvas, 0, 0, lw, lh, 0, 0, 1280, 720);
-
-        // Vertical: center crop → 720×1280
-        vCtx.drawImage(normCanvas, cropX, 0, cropW, lh, 0, 0, 720, 1280);
-
-        // PiP canvas (vertical crop small)
-        pCtx.drawImage(normCanvas, cropX, 0, cropW, lh, 0, 0, 270, 480);
+        hCtx.drawImage(normCanvas, 0, 0, lw, lh, 0, 0, hCanvas.width, hCanvas.height);
+        vCtx.drawImage(normCanvas, cropX, 0, cropW, lh, 0, 0, vCanvas.width, vCanvas.height);
+        pCtx.drawImage(normCanvas, cropX, 0, cropW, lh, 0, 0, pipCanvas.width, pipCanvas.height);
 
         // ── Step 4: draw main display canvas ──
         const mw = mainCanvas.width, mh = mainCanvas.height;
@@ -532,12 +544,13 @@
     if (stream) stream.getTracks().forEach(t=>t.stop());
     try {
       stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode:{ideal:facing}, width:{ideal:1920}, height:{ideal:1080} },
+        video: { facingMode: { ideal: facing } },
         audio: true
       });
       srcVideo.srcObject = stream;
       await new Promise(r => srcVideo.onloadedmetadata = r);
       srcVideo.play();
+      setupCanvasSizes();
       startRender();
       return true;
     } catch { return false; }
@@ -570,7 +583,7 @@
   function startRecording() {
     hChunks=[]; vChunks=[]; hDone=vDone=false;
     const mime=bestMime();
-    const opts=mime?{mimeType:mime,videoBitsPerSecond:8_000_000}:{videoBitsPerSecond:8_000_000};
+    const opts=mime?{mimeType:mime}:{};
     const audio=stream.getAudioTracks();
     const hs=hCanvas.captureStream(30), vs=vCanvas.captureStream(30);
     audio.forEach(t=>{hs.addTrack(t);vs.addTrack(t);});
@@ -612,8 +625,8 @@
     document.getElementById('dlH').download=`horizontal_16x9.${ext}`;
     document.getElementById('dlV').href=URL.createObjectURL(vBlob);
     document.getElementById('dlV').download=`vertical_9x16.${ext}`;
-    document.getElementById('dlHmeta').textContent=`1280×720 · ${(hBlob.size/1048576).toFixed(1)}MB`;
-    document.getElementById('dlVmeta').textContent=`720×1280 · ${(vBlob.size/1048576).toFixed(1)}MB`;
+    document.getElementById('dlHmeta').textContent=`${hCanvas.width}×${hCanvas.height} · ${(hBlob.size/1048576).toFixed(1)}MB`;
+    document.getElementById('dlVmeta').textContent=`${vCanvas.width}×${vCanvas.height} · ${(vBlob.size/1048576).toFixed(1)}MB`;
     document.getElementById('statusTxt').textContent='READY';
     document.getElementById('iconGuide').style.display='none';
     document.getElementById('iconDl').style.display='block';
