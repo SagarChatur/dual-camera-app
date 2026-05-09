@@ -388,6 +388,10 @@
   const mCtx = mainCanvas.getContext('2d');
   const pCtx = pipCanvas.getContext('2d');
 
+  // Max quality for recording contexts
+  hCtx.imageSmoothingEnabled = true; hCtx.imageSmoothingQuality = 'high';
+  vCtx.imageSmoothingEnabled = true; vCtx.imageSmoothingQuality = 'high';
+
   // Canvas sizes set dynamically in setupCanvasSizes() after stream starts
 
   let stream = null, facingMode = 'environment';
@@ -422,21 +426,22 @@
   function setupCanvasSizes() {
     const vw = srcVideo.videoWidth, vh = srcVideo.videoHeight;
 
-    // Horizontal canvas: native width × (width * 9/16) height, landscape
-    const hW = Math.max(vw, vh);
-    const hH = Math.round(hW * 9 / 16);
-    hCanvas.width  = hW;
-    hCanvas.height = hH;
+    // Horizontal 16:9 crop: source region is (0, hSrcY, vw, vw*9/16)
+    // Canvas must be exactly that many source pixels — no up/downscale
+    const hSrcW = vw;
+    const hSrcH = Math.round(vw * 9 / 16);
+    hCanvas.width  = hSrcW;
+    hCanvas.height = hSrcH;
 
-    // Vertical canvas: (height * 9/16) width × native height, portrait
-    const vH = Math.max(vw, vh);
-    const vW = Math.round(vH * 9 / 16);
-    vCanvas.width  = vW;
-    vCanvas.height = vH;
+    // Vertical 9:16 crop: source region is (vSrcX, 0, vh*9/16, vh)
+    const vSrcW = Math.round(vh * 9 / 16);
+    const vSrcH = vh;
+    vCanvas.width  = vSrcW;
+    vCanvas.height = vSrcH;
 
-    // PiP: display-only small copy of vertical
-    pipCanvas.width  = Math.round(vW / 4);
-    pipCanvas.height = Math.round(vH / 4);
+    // PiP: small display copy — 1/4 resolution is fine
+    pipCanvas.width  = Math.round(vSrcW / 4);
+    pipCanvas.height = Math.round(vSrcH / 4);
   }
 
   // ── Render loop ──
@@ -577,15 +582,29 @@
       .find(t=>MediaRecorder.isTypeSupported(t)) || '';
   }
 
+  // ── Bitrate: scale with resolution so quality matches the source ──
+  function targetBitrate(w, h) {
+    const px = w * h;
+    // ~0.1 bits per pixel per frame at 30fps is broadcast quality
+    // floor at 4Mbps, cap at 25Mbps
+    return Math.min(25_000_000, Math.max(4_000_000, Math.round(px * 30 * 0.1)));
+  }
+
   // ── Record ──
   function startRecording() {
     hChunks=[]; vChunks=[]; hDone=vDone=false;
     const mime=bestMime();
-    const opts=mime?{mimeType:mime}:{};
+
+    const hBitrate = targetBitrate(hCanvas.width, hCanvas.height);
+    const vBitrate = targetBitrate(vCanvas.width, vCanvas.height);
+
+    const hOpts = mime ? { mimeType: mime, videoBitsPerSecond: hBitrate } : { videoBitsPerSecond: hBitrate };
+    const vOpts = mime ? { mimeType: mime, videoBitsPerSecond: vBitrate } : { videoBitsPerSecond: vBitrate };
+
     const audio=stream.getAudioTracks();
     const hs=hCanvas.captureStream(30), vs=vCanvas.captureStream(30);
     audio.forEach(t=>{hs.addTrack(t);vs.addTrack(t);});
-    try { hRecorder=new MediaRecorder(hs,opts); vRecorder=new MediaRecorder(vs,opts); }
+    try { hRecorder=new MediaRecorder(hs,hOpts); vRecorder=new MediaRecorder(vs,vOpts); }
     catch { hRecorder=new MediaRecorder(hs); vRecorder=new MediaRecorder(vs); }
     hRecorder.ondataavailable=e=>{if(e.data.size>0)hChunks.push(e.data);};
     vRecorder.ondataavailable=e=>{if(e.data.size>0)vChunks.push(e.data);};
