@@ -1,266 +1,254 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
   <title>DualShot</title>
-  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
   <style>
     :root {
-      --accent: #ff3c5f;
-      --accent2: #ff8c42;
-      --text: #f0f0f0;
-      --muted: #666;
-      --border: rgba(255,255,255,0.1);
+      --accent:#ff3c5f; --accent2:#ff8c42;
+      --text:#f0f0f0; --muted:#666; --border:rgba(255,255,255,0.1);
     }
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body {
-      width: 100%; height: 100%;
-      background: #000; color: var(--text);
-      font-family: 'Syne', sans-serif;
-      overflow: hidden;
-      -webkit-tap-highlight-color: transparent;
-      user-select: none;
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    html,body{
+      width:100%;height:100%;background:#000;color:var(--text);
+      font-family:'Syne',sans-serif;overflow:hidden;
+      -webkit-tap-highlight-color:transparent;user-select:none;
     }
 
-    /* Full-screen display canvas */
-    #mainCanvas {
-      position: fixed; inset: 0;
-      width: 100%; height: 100%;
-      display: block; background: #000;
-    }
+    /* ── full-screen preview ── */
+    #mainCanvas{position:fixed;inset:0;width:100%;height:100%;display:block;background:#000}
+    #srcVideo,#previewCanvas{position:fixed;left:-9999px;top:-9999px;visibility:hidden;pointer-events:none}
 
-    /* Off-screen recording elements */
-    #srcVideo, #horizontal, #vertical {
-      position: fixed; left: -9999px; top: -9999px;
-      visibility: hidden; pointer-events: none;
+    /* ── PiP ── */
+    .pip{
+      position:fixed;top:72px;right:14px;
+      width:clamp(68px,20vw,104px);aspect-ratio:9/16;
+      border-radius:12px;overflow:hidden;
+      border:2px solid rgba(255,60,95,0.65);
+      box-shadow:0 4px 20px rgba(0,0,0,0.8);
+      z-index:20;transition:opacity 0.3s;
     }
-
-    /* ── PiP vertical preview ── */
-    .pip {
-      position: fixed; top: 72px; right: 14px;
-      width: clamp(68px, 20vw, 104px);
-      aspect-ratio: 9/16;
-      border-radius: 12px; overflow: hidden;
-      border: 2px solid rgba(255,60,95,0.65);
-      box-shadow: 0 4px 20px rgba(0,0,0,0.8);
-      z-index: 20; cursor: pointer;
-      transition: opacity 0.3s;
+    .pip canvas{width:100%;height:100%;display:block}
+    .pip-label{
+      position:absolute;bottom:0;left:0;right:0;
+      background:linear-gradient(transparent,rgba(0,0,0,0.8));
+      font-family:'DM Mono',monospace;font-size:7px;letter-spacing:1px;
+      color:rgba(255,255,255,0.75);text-align:center;padding:10px 0 4px;
     }
-    .pip canvas { width: 100%; height: 100%; display: block; }
-    .pip-label {
-      position: absolute; bottom: 0; left: 0; right: 0;
-      background: linear-gradient(transparent, rgba(0,0,0,0.8));
-      font-family: 'DM Mono', monospace; font-size: 7px; letter-spacing: 1px;
-      color: rgba(255,255,255,0.75); text-align: center; padding: 10px 0 4px;
-    }
-    .pip-tag {
-      position: absolute; top: 5px; left: 5px;
-      font-family: 'DM Mono', monospace; font-size: 7px; letter-spacing: 0.5px;
-      background: rgba(255,60,95,0.85); color: #fff;
-      padding: 2px 5px; border-radius: 4px;
+    .pip-tag{
+      position:absolute;top:5px;left:5px;
+      font-family:'DM Mono',monospace;font-size:7px;letter-spacing:0.5px;
+      background:rgba(255,60,95,0.85);color:#fff;padding:2px 5px;border-radius:4px;
     }
 
     /* ── Header ── */
-    header {
-      position: fixed; top: 0; left: 0; right: 0; z-index: 30;
-      display: flex; align-items: center; justify-content: space-between;
-      padding-top: max(env(safe-area-inset-top, 0px), 12px);
-      padding-left: 16px; padding-right: 16px; padding-bottom: 12px;
-      background: linear-gradient(to bottom, rgba(0,0,0,0.72), transparent);
-      pointer-events: none;
+    header{
+      position:fixed;top:0;left:0;right:0;z-index:30;
+      display:flex;align-items:center;justify-content:space-between;
+      padding-top:max(env(safe-area-inset-top,0px),12px);
+      padding-left:16px;padding-right:16px;padding-bottom:12px;
+      background:linear-gradient(to bottom,rgba(0,0,0,0.72),transparent);
+      pointer-events:none;
     }
-    .logo {
-      font-size: 18px; font-weight: 800; letter-spacing: -0.5px;
-      background: linear-gradient(135deg, #fff 30%, var(--accent) 100%);
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    .logo{
+      font-size:18px;font-weight:800;letter-spacing:-0.5px;
+      background:linear-gradient(135deg,#fff 30%,var(--accent) 100%);
+      -webkit-background-clip:text;-webkit-text-fill-color:transparent;
     }
-    .status-pill {
-      display: flex; align-items: center; gap: 6px;
-      background: rgba(0,0,0,0.5); backdrop-filter: blur(12px);
-      border: 1px solid var(--border); border-radius: 999px;
-      padding: 5px 11px;
-      font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.5px;
-      pointer-events: auto;
+    .status-pill{
+      display:flex;align-items:center;gap:6px;
+      background:rgba(0,0,0,0.5);backdrop-filter:blur(12px);
+      border:1px solid var(--border);border-radius:999px;padding:5px 11px;
+      font-family:'DM Mono',monospace;font-size:10px;letter-spacing:0.5px;
+      pointer-events:auto;
     }
-    .sdot {
-      width: 6px; height: 6px; border-radius: 50%;
-      background: #555; transition: background 0.3s; flex-shrink: 0;
-    }
-    .sdot.live { background: var(--accent); animation: sp 1.2s infinite; }
-    @keyframes sp {
-      0%,100%{box-shadow:0 0 0 0 rgba(255,60,95,0.6)}
-      50%{box-shadow:0 0 0 4px rgba(255,60,95,0)}
-    }
+    .sdot{width:6px;height:6px;border-radius:50%;background:#555;transition:background 0.3s;flex-shrink:0}
+    .sdot.live{background:var(--accent);animation:sp 1.2s infinite}
+    @keyframes sp{0%,100%{box-shadow:0 0 0 0 rgba(255,60,95,0.6)}50%{box-shadow:0 0 0 4px rgba(255,60,95,0)}}
 
     /* ── REC timer ── */
-    .rec-timer {
-      position: fixed; top: 0; left: 50%; transform: translateX(-50%);
-      padding-top: max(env(safe-area-inset-top, 0px), 14px);
-      z-index: 35; pointer-events: none;
-      opacity: 0; transition: opacity 0.3s;
+    .rec-timer{
+      position:fixed;top:0;left:50%;transform:translateX(-50%);
+      padding-top:max(env(safe-area-inset-top,0px),14px);
+      z-index:35;pointer-events:none;opacity:0;transition:opacity 0.3s;
     }
-    .rec-timer.show { opacity: 1; }
-    .rec-inner {
-      display: flex; align-items: center; gap: 7px;
-      background: rgba(255,60,95,0.9); backdrop-filter: blur(8px);
-      padding: 5px 14px; border-radius: 999px;
-      font-family: 'DM Mono', monospace; font-size: 13px; color: #fff;
+    .rec-timer.show{opacity:1}
+    .rec-inner{
+      display:flex;align-items:center;gap:7px;
+      background:rgba(255,60,95,0.9);backdrop-filter:blur(8px);
+      padding:5px 14px;border-radius:999px;
+      font-family:'DM Mono',monospace;font-size:13px;color:#fff;
     }
-    .rec-dot { width: 7px; height: 7px; border-radius: 50%; background: #fff; animation: blink 1s infinite; }
-    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+    .rec-dot{width:7px;height:7px;border-radius:50%;background:#fff;animation:blink 1s infinite}
+    @keyframes blink{0%,100%{opacity:1}50%{opacity:0.2}}
 
     /* ── View tabs ── */
-    .vtabs {
-      position: fixed; bottom: 138px; left: 50%; transform: translateX(-50%);
-      z-index: 25; display: flex;
-      background: rgba(0,0,0,0.5); backdrop-filter: blur(14px);
-      border: 1px solid var(--border); border-radius: 999px; padding: 3px;
+    .vtabs{
+      position:fixed;bottom:138px;left:50%;transform:translateX(-50%);
+      z-index:25;display:flex;
+      background:rgba(0,0,0,0.5);backdrop-filter:blur(14px);
+      border:1px solid var(--border);border-radius:999px;padding:3px;
     }
-    .vtab {
-      font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 1px;
-      padding: 6px 16px; border-radius: 999px; cursor: pointer;
-      color: rgba(255,255,255,0.45); border: none; background: transparent;
-      transition: all 0.2s;
+    .vtab{
+      font-family:'DM Mono',monospace;font-size:10px;letter-spacing:1px;
+      padding:6px 16px;border-radius:999px;cursor:pointer;
+      color:rgba(255,255,255,0.45);border:none;background:transparent;transition:all 0.2s;
     }
-    .vtab.active { background: rgba(255,255,255,0.13); color: #fff; }
+    .vtab.active{background:rgba(255,255,255,0.13);color:#fff}
 
-    /* ── Controls bar ── */
-    .controls {
-      position: fixed; bottom: 0; left: 0; right: 0; z-index: 30;
-      padding: 18px 28px;
-      padding-bottom: max(env(safe-area-inset-bottom, 18px), 28px);
-      background: linear-gradient(to top, rgba(0,0,0,0.85), transparent);
-      display: flex; align-items: center; justify-content: space-between;
+    /* ── Controls ── */
+    .controls{
+      position:fixed;bottom:0;left:0;right:0;z-index:30;
+      padding:18px 28px;
+      padding-bottom:max(env(safe-area-inset-bottom,18px),28px);
+      background:linear-gradient(to top,rgba(0,0,0,0.85),transparent);
+      display:flex;align-items:center;justify-content:space-between;
     }
-    .btn-side {
-      width: 50px; height: 50px; border-radius: 50%;
-      border: 1.5px solid rgba(255,255,255,0.18);
-      background: rgba(0,0,0,0.45); backdrop-filter: blur(8px);
-      display: flex; align-items: center; justify-content: center;
-      cursor: pointer; color: #fff; transition: all 0.18s;
+    .btn-side{
+      width:50px;height:50px;border-radius:50%;
+      border:1.5px solid rgba(255,255,255,0.18);
+      background:rgba(0,0,0,0.45);backdrop-filter:blur(8px);
+      display:flex;align-items:center;justify-content:center;
+      cursor:pointer;color:#fff;transition:all 0.18s;
     }
-    .btn-side:active { transform: scale(0.9); background: rgba(255,255,255,0.12); }
-    .btn-side svg { width: 19px; height: 19px; }
-    .btn-record {
-      width: 78px; height: 78px; border-radius: 50%;
-      border: 3px solid rgba(255,255,255,0.22);
-      background: transparent;
-      display: flex; align-items: center; justify-content: center;
-      cursor: pointer; transition: all 0.15s;
+    .btn-side:active{transform:scale(0.9);background:rgba(255,255,255,0.12)}
+    .btn-side svg{width:19px;height:19px}
+    .btn-record{
+      width:78px;height:78px;border-radius:50%;
+      border:3px solid rgba(255,255,255,0.22);background:transparent;
+      display:flex;align-items:center;justify-content:center;
+      cursor:pointer;transition:all 0.15s;
     }
-    .btn-record:active { transform: scale(0.92); }
-    .rec-core {
-      width: 56px; height: 56px; border-radius: 50%;
-      background: var(--accent);
-      transition: all 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
-      box-shadow: 0 0 24px rgba(255,60,95,0.45);
+    .btn-record:active{transform:scale(0.92)}
+    .rec-core{
+      width:56px;height:56px;border-radius:50%;background:var(--accent);
+      transition:all 0.28s cubic-bezier(0.34,1.56,0.64,1);
+      box-shadow:0 0 24px rgba(255,60,95,0.45);
     }
-    .btn-record.recording { border-color: rgba(255,60,95,0.5); }
-    .btn-record.recording .rec-core { border-radius: 10px; width: 32px; height: 32px; }
+    .btn-record.recording{border-color:rgba(255,60,95,0.5)}
+    .btn-record.recording .rec-core{border-radius:10px;width:32px;height:32px}
+
+    /* ── Processing overlay ── */
+    .processing{
+      position:fixed;inset:0;z-index:60;
+      background:rgba(0,0,0,0.92);backdrop-filter:blur(20px);
+      display:none;flex-direction:column;align-items:center;justify-content:center;gap:20px;
+      padding:40px;text-align:center;
+    }
+    .processing.show{display:flex}
+    .proc-spinner{
+      width:56px;height:56px;border-radius:50%;
+      border:3px solid rgba(255,255,255,0.08);
+      border-top-color:var(--accent);
+      animation:spin 0.8s linear infinite;
+    }
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .proc-title{font-size:20px;font-weight:800}
+    .proc-sub{font-size:13px;color:var(--muted);line-height:1.6;max-width:260px}
+    .proc-bar-wrap{width:100%;max-width:260px;background:rgba(255,255,255,0.08);border-radius:999px;height:4px;overflow:hidden}
+    .proc-bar{height:100%;background:var(--accent);border-radius:999px;width:0%;transition:width 0.3s}
+    .proc-step{font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);letter-spacing:1px}
 
     /* ── Downloads sheet ── */
-    .dl-sheet {
-      position: fixed; bottom: 0; left: 0; right: 0; z-index: 50;
-      background: #0c0c10; border-top: 1px solid rgba(255,255,255,0.07);
-      border-radius: 22px 22px 0 0;
-      padding: 0 18px;
-      padding-bottom: max(env(safe-area-inset-bottom, 18px), 28px);
-      transform: translateY(100%);
-      transition: transform 0.38s cubic-bezier(0.32, 0.72, 0, 1);
+    .dl-sheet{
+      position:fixed;bottom:0;left:0;right:0;z-index:50;
+      background:#0c0c10;border-top:1px solid rgba(255,255,255,0.07);
+      border-radius:22px 22px 0 0;padding:0 18px;
+      padding-bottom:max(env(safe-area-inset-bottom,18px),28px);
+      transform:translateY(100%);transition:transform 0.38s cubic-bezier(0.32,0.72,0,1);
     }
-    .dl-sheet.open { transform: translateY(0); }
-    .handle { width: 36px; height: 4px; border-radius: 2px; background: rgba(255,255,255,0.14); margin: 14px auto 18px; }
-    .sheet-title { font-size: 10px; letter-spacing: 2px; color: var(--muted); text-transform: uppercase; margin-bottom: 14px; }
-    .dl-row { display: flex; gap: 12px; margin-bottom: 12px; }
-    .dl-card {
-      flex: 1; display: flex; flex-direction: column; align-items: center; gap: 10px;
-      background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07);
-      border-radius: 16px; padding: 18px 12px;
-      text-decoration: none; color: var(--text); cursor: pointer;
-      transition: all 0.18s; animation: su 0.4s ease both;
+    .dl-sheet.open{transform:translateY(0)}
+    .handle{width:36px;height:4px;border-radius:2px;background:rgba(255,255,255,0.14);margin:14px auto 18px}
+    .sheet-title{font-size:10px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;margin-bottom:14px}
+    .dl-row{display:flex;gap:12px;margin-bottom:12px}
+    .dl-card{
+      flex:1;display:flex;flex-direction:column;align-items:center;gap:10px;
+      background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.07);
+      border-radius:16px;padding:18px 12px;
+      text-decoration:none;color:var(--text);cursor:pointer;
+      transition:all 0.18s;animation:su 0.4s ease both;
     }
-    .dl-card:nth-child(2) { animation-delay: 0.07s; }
-    @keyframes su { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:none} }
-    .dl-card:active { background: rgba(255,255,255,0.08); transform: scale(0.97); }
-    .dl-ico {
-      width: 44px; height: 44px; border-radius: 12px;
-      display: flex; align-items: center; justify-content: center;
+    .dl-card:nth-child(2){animation-delay:0.07s}
+    @keyframes su{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+    .dl-card:active{background:rgba(255,255,255,0.08);transform:scale(0.97)}
+    .dl-ico{width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center}
+    .dl-ico.h{background:rgba(255,140,66,0.14);color:var(--accent2)}
+    .dl-ico.v{background:rgba(255,60,95,0.14);color:var(--accent)}
+    .dl-ico svg{width:20px;height:20px}
+    .dl-name{font-size:13px;font-weight:700}
+    .dl-meta{font-family:'DM Mono',monospace;font-size:9px;color:var(--muted);text-align:center}
+    .dl-save{
+      display:flex;align-items:center;gap:5px;
+      background:rgba(255,255,255,0.08);border-radius:999px;
+      padding:5px 12px;font-size:11px;font-weight:700;color:#fff;margin-top:2px;
     }
-    .dl-ico.h { background: rgba(255,140,66,0.14); color: var(--accent2); }
-    .dl-ico.v { background: rgba(255,60,95,0.14); color: var(--accent); }
-    .dl-ico svg { width: 20px; height: 20px; }
-    .dl-name { font-size: 13px; font-weight: 700; }
-    .dl-meta { font-family: 'DM Mono', monospace; font-size: 9px; color: var(--muted); text-align: center; }
-    .dl-save {
-      display: flex; align-items: center; gap: 5px;
-      background: rgba(255,255,255,0.08); border-radius: 999px;
-      padding: 5px 12px; font-size: 11px; font-weight: 700; color: #fff; margin-top: 2px;
+    .btn-done{
+      width:100%;padding:14px;
+      background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.07);
+      border-radius:14px;color:var(--muted);
+      font-family:'Syne',sans-serif;font-size:14px;font-weight:700;
+      cursor:pointer;transition:all 0.18s;
     }
-    .btn-done {
-      width: 100%; padding: 14px;
-      background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.07);
-      border-radius: 14px; color: var(--muted);
-      font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700;
-      cursor: pointer; transition: all 0.18s;
-    }
-    .btn-done:active { background: rgba(255,255,255,0.1); }
+    .btn-done:active{background:rgba(255,255,255,0.1)}
 
     /* ── Toast ── */
-    .toast {
-      position: fixed; bottom: 130px; left: 50%;
-      transform: translateX(-50%) translateY(8px);
-      background: rgba(18,18,22,0.92); backdrop-filter: blur(14px);
-      border: 1px solid var(--border); border-radius: 999px;
-      padding: 9px 18px; font-size: 12px; color: var(--text);
-      opacity: 0; pointer-events: none; white-space: nowrap;
-      transition: all 0.25s; z-index: 40;
+    .toast{
+      position:fixed;bottom:130px;left:50%;
+      transform:translateX(-50%) translateY(8px);
+      background:rgba(18,18,22,0.92);backdrop-filter:blur(14px);
+      border:1px solid var(--border);border-radius:999px;
+      padding:9px 18px;font-size:12px;color:var(--text);
+      opacity:0;pointer-events:none;white-space:nowrap;
+      transition:all 0.25s;z-index:40;
     }
-    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 
     /* ── Init overlay ── */
-    .init {
-      position: fixed; inset: 0; z-index: 100; background: #000;
-      display: flex; flex-direction: column; align-items: center;
-      justify-content: center; gap: 16px; padding: 40px; text-align: center;
+    .init{
+      position:fixed;inset:0;z-index:100;background:#000;
+      display:flex;flex-direction:column;align-items:center;
+      justify-content:center;gap:16px;padding:40px;text-align:center;
     }
-    .init.hide { animation: fo 0.35s forwards; }
-    @keyframes fo { to { opacity: 0; } }
-    .init-icon {
-      width: 80px; height: 80px; border-radius: 28px;
-      background: linear-gradient(135deg, var(--accent2), var(--accent));
-      display: flex; align-items: center; justify-content: center; margin-bottom: 4px;
-      box-shadow: 0 12px 40px rgba(255,60,95,0.35);
+    .init.hide{animation:fo 0.35s forwards;pointer-events:none}
+    @keyframes fo{to{opacity:0}}
+    .init-icon{
+      width:80px;height:80px;border-radius:28px;
+      background:linear-gradient(135deg,var(--accent2),var(--accent));
+      display:flex;align-items:center;justify-content:center;margin-bottom:4px;
+      box-shadow:0 12px 40px rgba(255,60,95,0.35);
     }
-    .init-icon svg { width: 38px; height: 38px; color: #fff; }
-    .init-title { font-size: 30px; font-weight: 800; letter-spacing: -1px; }
-    .init-sub { font-size: 13px; color: var(--muted); line-height: 1.7; max-width: 240px; }
-    .chips { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin: 4px 0; }
-    .chip {
-      font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.5px;
-      padding: 4px 10px; border-radius: 999px;
-      background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
-      color: rgba(255,255,255,0.55);
+    .init-icon svg{width:38px;height:38px;color:#fff}
+    .init-title{font-size:30px;font-weight:800;letter-spacing:-1px}
+    .init-sub{font-size:13px;color:var(--muted);line-height:1.7;max-width:240px}
+    .chips{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin:4px 0}
+    .chip{
+      font-family:'DM Mono',monospace;font-size:10px;letter-spacing:0.5px;
+      padding:4px 10px;border-radius:999px;
+      background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);
+      color:rgba(255,255,255,0.55);
     }
-    .btn-allow {
-      background: var(--accent); color: #fff; border: none; border-radius: 16px;
-      padding: 16px 0; font-size: 16px; font-weight: 800;
-      font-family: 'Syne', sans-serif; cursor: pointer; margin-top: 8px;
-      width: 100%; max-width: 280px;
-      box-shadow: 0 8px 28px rgba(255,60,95,0.4); transition: all 0.18s;
+    .btn-allow{
+      background:var(--accent);color:#fff;border:none;border-radius:16px;
+      padding:16px 0;font-size:16px;font-weight:800;
+      font-family:'Syne',sans-serif;cursor:pointer;margin-top:8px;
+      width:100%;max-width:280px;
+      box-shadow:0 8px 28px rgba(255,60,95,0.4);transition:all 0.18s;
     }
-    .btn-allow:active { transform: scale(0.96); }
-    .init-err { font-size: 11px; color: #ff6b6b; font-family: 'DM Mono', monospace; min-height: 16px; }
+    .btn-allow:active{transform:scale(0.96)}
+    .init-err{font-size:11px;color:#ff6b6b;font-family:'DM Mono',monospace;min-height:16px}
   </style>
 </head>
 <body>
 
-<!-- Off-screen source + recording canvases -->
+<!-- Off-screen source video (display only, not recorded) -->
 <video id="srcVideo" autoplay playsinline muted></video>
-<canvas id="horizontal"></canvas>
-<canvas id="vertical"></canvas>
 
-<!-- Full-screen display -->
+<!-- Small canvas used only for PiP preview display -->
+<canvas id="previewCanvas"></canvas>
+
+<!-- Full-screen display canvas -->
 <canvas id="mainCanvas"></canvas>
 
 <!-- PiP vertical preview -->
@@ -300,13 +288,8 @@
       <path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/>
     </svg>
   </button>
-
-  <div class="btn-record" id="btnRecord">
-    <div class="rec-core"></div>
-  </div>
-
+  <div class="btn-record" id="btnRecord"><div class="rec-core"></div></div>
   <button class="btn-side" id="btnAction">
-    <!-- icon swaps between guide and download -->
     <svg id="iconGuide" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
       <rect x="3" y="3" width="18" height="18" rx="2"/>
       <line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/>
@@ -318,12 +301,21 @@
   </button>
 </div>
 
+<!-- Processing overlay -->
+<div class="processing" id="processing">
+  <div class="proc-spinner"></div>
+  <div class="proc-title">Processing</div>
+  <div class="proc-sub" id="procSub">Cropping vertical video at native quality…</div>
+  <div class="proc-bar-wrap"><div class="proc-bar" id="procBar"></div></div>
+  <div class="proc-step" id="procStep">LOADING FFMPEG</div>
+</div>
+
 <!-- Downloads sheet -->
 <div class="dl-sheet" id="dlSheet">
   <div class="handle"></div>
   <div class="sheet-title">Recordings ready</div>
   <div class="dl-row">
-    <a class="dl-card" id="dlH" download="horizontal_16x9.webm">
+    <a class="dl-card" id="dlH" download="horizontal_16x9.mp4">
       <div class="dl-ico h">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <rect x="2" y="6" width="20" height="12" rx="2"/>
@@ -337,7 +329,7 @@
         </svg>Save
       </div>
     </a>
-    <a class="dl-card" id="dlV" download="vertical_9x16.webm">
+    <a class="dl-card" id="dlV" download="vertical_9x16.mp4">
       <div class="dl-ico v">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <rect x="6" y="2" width="12" height="20" rx="2"/>
@@ -355,7 +347,6 @@
   <button class="btn-done" id="btnDone">Close</button>
 </div>
 
-<!-- Toast -->
 <div class="toast" id="toast"></div>
 
 <!-- Init overlay -->
@@ -366,40 +357,46 @@
     </svg>
   </div>
   <div class="init-title">DualShot</div>
-  <div class="init-sub">Record 16:9 &amp; 9:16 at the same time. One take, both formats.</div>
+  <div class="init-sub">Record 16:9 &amp; 9:16 simultaneously at full native quality.</div>
   <div class="chips">
-    <span class="chip">16:9 Full Frame</span>
-    <span class="chip">9:16 Center Crop</span>
+    <span class="chip">No Re-encoding</span>
+    <span class="chip">Native Quality</span>
     <span class="chip">Live PiP</span>
-    
   </div>
   <button class="btn-allow" id="btnAllow">Allow Camera</button>
   <div class="init-err" id="initErr"></div>
 </div>
 
-<script>
+<!-- FFmpeg.wasm (loads lazily when needed) -->
+<script type="module">
+  // ─────────────────────────────────────────────────────────
+  //  APPROACH:
+  //  1. Record the RAW camera stream directly with MediaRecorder
+  //     (no canvas, no re-encoding) → this is the horizontal video,
+  //     already at full native quality.
+  //  2. After recording stops, load FFmpeg.wasm and use it to
+  //     crop the raw recording to 9:16 using a lossless stream-copy
+  //     (no re-encode of the video frames).
+  //  3. The canvas is used ONLY for the live preview display.
+  // ─────────────────────────────────────────────────────────
+
+  import { FFmpeg } from 'https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js';
+  import { fetchFile, toBlobURL } from 'https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.1/dist/esm/index.js';
+
   const srcVideo   = document.getElementById('srcVideo');
-  const hCanvas    = document.getElementById('horizontal');
-  const vCanvas    = document.getElementById('vertical');
   const mainCanvas = document.getElementById('mainCanvas');
   const pipCanvas  = document.getElementById('pipCanvas');
-  const hCtx = hCanvas.getContext('2d');
-  const vCtx = vCanvas.getContext('2d');
   const mCtx = mainCanvas.getContext('2d');
   const pCtx = pipCanvas.getContext('2d');
-
-  // Max quality for recording contexts
-  hCtx.imageSmoothingEnabled = true; hCtx.imageSmoothingQuality = 'high';
-  vCtx.imageSmoothingEnabled = true; vCtx.imageSmoothingQuality = 'high';
-
-  // Canvas sizes set dynamically in setupCanvasSizes() after stream starts
+  pipCanvas.width = 270; pipCanvas.height = 480;
 
   let stream = null, facingMode = 'environment';
-  let hRecorder, vRecorder, hChunks = [], vChunks = [];
-  let recording = false, hDone = false, vDone = false;
+  let rawRecorder, rawChunks = [];
+  let recording = false, rafId = null;
   let timerInterval = null, elapsed = 0;
-  let rafId = null, guideOn = true, currentView = 'h';
-  let hasRecording = false;
+  let guideOn = true, currentView = 'h';
+  let ffmpegLoaded = false;
+  const ffmpeg = new FFmpeg();
 
   // ── Resize main canvas ──
   function resize() {
@@ -409,79 +406,33 @@
   window.addEventListener('resize', resize);
   resize();
 
-  // ── Set canvas sizes from actual stream resolution ──
-  // ── Canvas sizes from stream ──
-  // Phone held upright  → stream is portrait  (vw < vh): e.g. 1080×1920
-  // Phone held sideways → stream is landscape (vw > vh): e.g. 1920×1080
-  // We NEVER rotate — we use the stream as-is and just do the right crop math.
-  //
-  // Vertical  (9:16) recording = the portrait dimension of the source
-  //   • portrait stream  → full frame is already 9:16
-  //   • landscape stream → center-crop top/bottom to get 9:16
-  //
-  // Horizontal (16:9) recording = the landscape dimension of the source
-  //   • portrait stream  → center-crop left/right to get 16:9
-  //   • landscape stream → full frame is already 16:9
-
-  function setupCanvasSizes() {
-    const vw = srcVideo.videoWidth, vh = srcVideo.videoHeight;
-
-    // Horizontal 16:9 crop: source region is (0, hSrcY, vw, vw*9/16)
-    // Canvas must be exactly that many source pixels — no up/downscale
-    const hSrcW = vw;
-    const hSrcH = Math.round(vw * 9 / 16);
-    hCanvas.width  = hSrcW;
-    hCanvas.height = hSrcH;
-
-    // Vertical 9:16 crop: source region is (vSrcX, 0, vh*9/16, vh)
-    const vSrcW = Math.round(vh * 9 / 16);
-    const vSrcH = vh;
-    vCanvas.width  = vSrcW;
-    vCanvas.height = vSrcH;
-
-    // PiP: small display copy — 1/4 resolution is fine
-    pipCanvas.width  = Math.round(vSrcW / 4);
-    pipCanvas.height = Math.round(vSrcH / 4);
-  }
-
-  // ── Render loop ──
+  // ── Preview-only render loop (canvas is ONLY for display) ──
   function startRender() {
     if (rafId) cancelAnimationFrame(rafId);
     (function render() {
       if (srcVideo.readyState >= 2) {
         const vw = srcVideo.videoWidth, vh = srcVideo.videoHeight;
-
-        // ── Crop math (no rotation ever) ──
-        // Horizontal 16:9: full width, crop height to width*(9/16)
-        const hSrcW = vw;
-        const hSrcH = Math.round(vw * 9 / 16);
-        const hSrcY = Math.round((vh - hSrcH) / 2);
-
-        // Vertical 9:16: full height, crop width to height*(9/16)
-        const vSrcH = vh;
         const vSrcW = Math.round(vh * 9 / 16);
         const vSrcX = Math.round((vw - vSrcW) / 2);
 
-        // ── Recording canvases ──
-        hCtx.drawImage(srcVideo, 0, hSrcY, hSrcW, hSrcH, 0, 0, hCanvas.width, hCanvas.height);
-        vCtx.drawImage(srcVideo, vSrcX, 0, vSrcW, vSrcH, 0, 0, vCanvas.width, vCanvas.height);
-        pCtx.drawImage(srcVideo, vSrcX, 0, vSrcW, vSrcH, 0, 0, pipCanvas.width, pipCanvas.height);
+        // PiP: 9:16 crop
+        pCtx.drawImage(srcVideo, vSrcX, 0, vSrcW, vh, 0, 0, pipCanvas.width, pipCanvas.height);
 
-        // ── Main display canvas ──
+        // Main display
         const mw = mainCanvas.width, mh = mainCanvas.height;
         mCtx.clearRect(0, 0, mw, mh);
 
         if (currentView === 'h') {
-          // Show 16:9 crop of source, filling the screen
-          coverFit(mCtx, srcVideo, 0, hSrcY, hSrcW, hSrcH, mw, mh);
-          if (guideOn) drawGuide(mCtx, mw, mh, vSrcX, vSrcW, vSrcH, vw, vh);
+          const hSrcH = Math.round(vw * 9 / 16);
+          const hSrcY = Math.round((vh - hSrcH) / 2);
+          coverFit(mCtx, srcVideo, 0, hSrcY, vw, hSrcH, mw, mh);
+          if (guideOn) drawGuide(mCtx, mw, mh, vSrcX, vSrcW, vw, vh);
         } else {
-          // Show 9:16 crop of source, centred on screen
           mCtx.fillStyle = '#000';
           mCtx.fillRect(0, 0, mw, mh);
           const dw = Math.min(mw, mh * 9 / 16);
           const dh = dw * 16 / 9;
-          mCtx.drawImage(srcVideo, vSrcX, 0, vSrcW, vSrcH,
+          mCtx.drawImage(srcVideo, vSrcX, 0, vSrcW, vh,
             (mw - dw) / 2, (mh - dh) / 2, dw, dh);
         }
       }
@@ -489,62 +440,48 @@
     })();
   }
 
-  // Cover-fit a source region into destination rect (centred, no distortion)
   function coverFit(ctx, src, sx, sy, sw, sh, dw, dh) {
-    const sr = sw / sh, dr = dw / dh;
+    const sr = sw/sh, dr = dw/dh;
     let W, H;
-    if (sr > dr) { H = dh; W = dh * sr; }
-    else         { W = dw; H = dw / sr; }
-    ctx.drawImage(src, sx, sy, sw, sh, (dw - W) / 2, (dh - H) / 2, W, H);
+    if (sr > dr) { H = dh; W = dh*sr; } else { W = dw; H = dw/sr; }
+    ctx.drawImage(src, sx, sy, sw, sh, (dw-W)/2, (dh-H)/2, W, H);
   }
 
-  // Draw the 9:16 crop overlay on the 16:9 main view
-  function drawGuide(ctx, mw, mh, vSrcX, vSrcW, vSrcH, streamW, streamH) {
-    // The 16:9 display shows the full stream width, centre-cropped vertically.
-    // We need to map the 9:16 crop rect (vSrcX, 0, vSrcW, vSrcH) onto screen coords.
-    // The 16:9 source region is (0, hSrcY, streamW, streamW*9/16).
+  function drawGuide(ctx, mw, mh, vSrcX, vSrcW, streamW, streamH) {
     const hSrcH = Math.round(streamW * 9 / 16);
-    const hSrcY = Math.round((streamH - hSrcH) / 2);
-
-    // coverFit scale for the 16:9 source into mw×mh
     const sr = streamW / hSrcH, dr = mw / mh;
     let W, H, ox, oy;
-    if (sr > dr) { H = mh; W = mh * sr; ox = (mw - W) / 2; oy = 0; }
-    else         { W = mw; H = mw / sr; ox = 0; oy = (mh - H) / 2; }
-
+    if (sr > dr) { H = mh; W = mh*sr; ox=(mw-W)/2; oy=0; }
+    else         { W = mw; H = mw/sr; ox=0; oy=(mh-H)/2; }
     const scaleX = W / streamW;
-    const scaleY = H / hSrcH;
-
-    // vSrcX is in source coords; map to display coords
     const left = ox + vSrcX * scaleX;
-    const cw   = vSrcW * scaleX;
-
+    const cw = vSrcW * scaleX;
     ctx.save();
     ctx.fillStyle = 'rgba(0,0,0,0.42)';
-    ctx.fillRect(ox, oy, left - ox, H);
-    ctx.fillRect(left + cw, oy, (ox + W) - (left + cw), H);
+    ctx.fillRect(ox, oy, left-ox, H);
+    ctx.fillRect(left+cw, oy, (ox+W)-(left+cw), H);
     ctx.strokeStyle = 'rgba(255,140,66,0.85)';
     ctx.lineWidth = 1.5;
-    ctx.setLineDash([6, 5]);
-    ctx.strokeRect(left + 0.75, oy + 0.75, cw - 1.5, H - 1.5);
+    ctx.setLineDash([6,5]);
+    ctx.strokeRect(left+0.75, oy+0.75, cw-1.5, H-1.5);
     ctx.setLineDash([]);
     ctx.fillStyle = 'rgba(255,140,66,0.95)';
-    ctx.font = '500 10px "DM Mono", monospace';
-    ctx.fillText('9:16', left + 8, oy + 18);
+    ctx.font = '500 10px "DM Mono",monospace';
+    ctx.fillText('9:16', left+8, oy+18);
     ctx.restore();
   }
 
-  // ── View ──
-  function setView(v) {
+  // ── View toggle ──
+  window.setView = function(v) {
     currentView = v;
     document.getElementById('tabH').classList.toggle('active', v==='h');
     document.getElementById('tabV').classList.toggle('active', v==='v');
     document.getElementById('pip').style.display = v==='h' ? 'block' : 'none';
-  }
+  };
 
   // ── Camera ──
   async function initCamera(facing) {
-    if (stream) stream.getTracks().forEach(t=>t.stop());
+    if (stream) stream.getTracks().forEach(t => t.stop());
     try {
       stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: { ideal: facing } },
@@ -553,10 +490,23 @@
       srcVideo.srcObject = stream;
       await new Promise(r => srcVideo.onloadedmetadata = r);
       srcVideo.play();
-      setupCanvasSizes();
       startRender();
       return true;
     } catch { return false; }
+  }
+
+  // ── Best mime for raw recording ──
+  function bestMime() {
+    // Prefer mp4 (H.264) for widest compatibility after FFmpeg processing
+    const types = [
+      'video/mp4;codecs=h264,aac',
+      'video/mp4;codecs=avc1',
+      'video/mp4',
+      'video/webm;codecs=vp9',
+      'video/webm;codecs=vp8',
+      'video/webm',
+    ];
+    return types.find(t => MediaRecorder.isTypeSupported(t)) || '';
   }
 
   // ── Timer ──
@@ -573,135 +523,267 @@
   function toast(msg) {
     const t = document.getElementById('toast');
     t.textContent = msg; t.classList.add('show');
-    setTimeout(()=>t.classList.remove('show'), 2200);
+    setTimeout(() => t.classList.remove('show'), 2600);
   }
 
-  // ── Codec ──
-  function bestMime() {
-    return ['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm','video/mp4']
-      .find(t=>MediaRecorder.isTypeSupported(t)) || '';
-  }
-
-  // ── Bitrate: scale with resolution so quality matches the source ──
-  function targetBitrate(w, h) {
-    const px = w * h;
-    // ~0.1 bits per pixel per frame at 30fps is broadcast quality
-    // floor at 4Mbps, cap at 25Mbps
-    return Math.min(25_000_000, Math.max(4_000_000, Math.round(px * 30 * 0.1)));
-  }
-
-  // ── Record ──
+  // ── Recording ──
   function startRecording() {
-    hChunks=[]; vChunks=[]; hDone=vDone=false;
-    const mime=bestMime();
+    rawChunks = [];
+    const mime = bestMime();
+    // Record directly from the camera stream — no canvas, no quality loss
+    const opts = mime ? { mimeType: mime } : {};
+    try { rawRecorder = new MediaRecorder(stream, opts); }
+    catch { rawRecorder = new MediaRecorder(stream); }
 
-    const hBitrate = targetBitrate(hCanvas.width, hCanvas.height);
-    const vBitrate = targetBitrate(vCanvas.width, vCanvas.height);
+    rawRecorder.ondataavailable = e => { if (e.data.size > 0) rawChunks.push(e.data); };
+    rawRecorder.onstop = () => processRecording();
+    rawRecorder.start(100);
 
-    const hOpts = mime ? { mimeType: mime, videoBitsPerSecond: hBitrate } : { videoBitsPerSecond: hBitrate };
-    const vOpts = mime ? { mimeType: mime, videoBitsPerSecond: vBitrate } : { videoBitsPerSecond: vBitrate };
-
-    const audio=stream.getAudioTracks();
-    const hs=hCanvas.captureStream(30), vs=vCanvas.captureStream(30);
-    audio.forEach(t=>{hs.addTrack(t);vs.addTrack(t);});
-    try { hRecorder=new MediaRecorder(hs,hOpts); vRecorder=new MediaRecorder(vs,vOpts); }
-    catch { hRecorder=new MediaRecorder(hs); vRecorder=new MediaRecorder(vs); }
-    hRecorder.ondataavailable=e=>{if(e.data.size>0)hChunks.push(e.data);};
-    vRecorder.ondataavailable=e=>{if(e.data.size>0)vChunks.push(e.data);};
-    hRecorder.onstop=()=>{hDone=true;finalize();};
-    vRecorder.onstop=()=>{vDone=true;finalize();};
-    hRecorder.start(100); vRecorder.start(100);
-    recording=true;
+    recording = true;
     document.getElementById('btnRecord').classList.add('recording');
     document.getElementById('recTimer').classList.add('show');
     document.getElementById('sdot').classList.add('live');
-    document.getElementById('statusTxt').textContent='REC';
-    document.getElementById('iconGuide').style.display='block';
-    document.getElementById('iconDl').style.display='none';
+    document.getElementById('statusTxt').textContent = 'REC';
+    document.getElementById('iconGuide').style.display = 'block';
+    document.getElementById('iconDl').style.display = 'none';
     startTimer();
-    toast('Recording both formats…');
+    toast('Recording at full native quality');
   }
 
   function stopRecording() {
-    hRecorder.stop(); vRecorder.stop();
-    recording=false;
+    rawRecorder.stop();
+    recording = false;
     document.getElementById('btnRecord').classList.remove('recording');
     document.getElementById('recTimer').classList.remove('show');
     document.getElementById('sdot').classList.remove('live');
-    document.getElementById('statusTxt').textContent='SAVING…';
+    document.getElementById('statusTxt').textContent = 'PROCESSING…';
     clearInterval(timerInterval);
   }
 
-  function finalize() {
-    if (!hDone||!vDone) return;
-    const mime=bestMime()||'video/webm';
-    const ext=mime.includes('mp4')?'mp4':'webm';
-    const hBlob=new Blob(hChunks,{type:mime});
-    const vBlob=new Blob(vChunks,{type:mime});
-    document.getElementById('dlH').href=URL.createObjectURL(hBlob);
-    document.getElementById('dlH').download=`horizontal_16x9.${ext}`;
-    document.getElementById('dlV').href=URL.createObjectURL(vBlob);
-    document.getElementById('dlV').download=`vertical_9x16.${ext}`;
-    document.getElementById('dlHmeta').textContent=`${hCanvas.width}×${hCanvas.height} · ${(hBlob.size/1048576).toFixed(1)}MB`;
-    document.getElementById('dlVmeta').textContent=`${vCanvas.width}×${vCanvas.height} · ${(vBlob.size/1048576).toFixed(1)}MB`;
-    document.getElementById('statusTxt').textContent='READY';
-    document.getElementById('iconGuide').style.display='none';
-    document.getElementById('iconDl').style.display='block';
-    hasRecording=true;
-    toast('Done! Tap ↓ to save your videos');
+  // ── FFmpeg processing ──
+  async function processRecording() {
+    const proc = document.getElementById('processing');
+    const procBar = document.getElementById('procBar');
+    const procStep = document.getElementById('procStep');
+    const procSub = document.getElementById('procSub');
+    proc.classList.add('show');
+
+    try {
+      // Step 1: load FFmpeg if not already loaded
+      if (!ffmpegLoaded) {
+        procStep.textContent = 'LOADING FFMPEG';
+        procSub.textContent = 'Loading video processor (one-time, ~10MB)…';
+        procBar.style.width = '10%';
+
+        // Use CDN-hosted ffmpeg core
+        const baseURL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm';
+        await ffmpeg.load({
+          coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+          wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+        });
+        ffmpegLoaded = true;
+      }
+
+      procStep.textContent = 'READING VIDEO';
+      procSub.textContent = 'Reading recorded footage…';
+      procBar.style.width = '25%';
+
+      // Get the raw recording blob
+      const mime = rawRecorder.mimeType || 'video/webm';
+      const ext = mime.includes('mp4') ? 'mp4' : 'webm';
+      const rawBlob = new Blob(rawChunks, { type: mime });
+      const rawData = await fetchFile(rawBlob);
+
+      // Write input to FFmpeg virtual filesystem
+      await ffmpeg.writeFile(`input.${ext}`, rawData);
+
+      // Get video dimensions from the stream
+      const vw = srcVideo.videoWidth, vh = srcVideo.videoHeight;
+      const vSrcW = Math.round(vh * 9 / 16);
+      const vSrcX = Math.round((vw - vSrcW) / 2);
+      const hSrcH = Math.round(vw * 9 / 16);
+      const hSrcY = Math.round((vh - hSrcH) / 2);
+
+      // Ensure crop values are even (required by most codecs)
+      const cropVW = vSrcW % 2 === 0 ? vSrcW : vSrcW - 1;
+      const cropVH = vh % 2 === 0 ? vh : vh - 1;
+      const cropHW = vw % 2 === 0 ? vw : vw - 1;
+      const cropHH = hSrcH % 2 === 0 ? hSrcH : hSrcH - 1;
+
+      // Step 2: extract horizontal 16:9 with stream copy (zero re-encoding of video)
+      procStep.textContent = 'HORIZONTAL VIDEO';
+      procSub.textContent = 'Trimming to 16:9 — no re-encoding…';
+      procBar.style.width = '45%';
+
+      ffmpeg.on('progress', ({ progress }) => {
+        if (progress >= 0) procBar.style.width = `${45 + progress * 20}%`;
+      });
+
+      await ffmpeg.exec([
+        '-i', `input.${ext}`,
+        '-vf', `crop=${cropHW}:${cropHH}:0:${hSrcY}`,
+        '-c:v', 'copy',   // stream-copy: zero quality loss on video
+        '-c:a', 'copy',   // stream-copy audio too
+        '-movflags', '+faststart',
+        'horizontal.mp4'
+      ]);
+
+      // If copy fails (codec mismatch), fall back to re-encode at high quality
+      let hData;
+      try {
+        hData = await ffmpeg.readFile('horizontal.mp4');
+      } catch {
+        await ffmpeg.exec([
+          '-i', `input.${ext}`,
+          '-vf', `crop=${cropHW}:${cropHH}:0:${hSrcY}`,
+          '-c:v', 'libx264', '-crf', '14', '-preset', 'fast',
+          '-c:a', 'aac', '-b:a', '192k',
+          'horizontal_fb.mp4'
+        ]);
+        hData = await ffmpeg.readFile('horizontal_fb.mp4');
+      }
+
+      // Step 3: extract vertical 9:16
+      procStep.textContent = 'VERTICAL VIDEO';
+      procSub.textContent = 'Trimming to 9:16 — no re-encoding…';
+      procBar.style.width = '70%';
+
+      ffmpeg.on('progress', ({ progress }) => {
+        if (progress >= 0) procBar.style.width = `${70 + progress * 20}%`;
+      });
+
+      await ffmpeg.exec([
+        '-i', `input.${ext}`,
+        '-vf', `crop=${cropVW}:${cropVH}:${vSrcX}:0`,
+        '-c:v', 'copy',
+        '-c:a', 'copy',
+        '-movflags', '+faststart',
+        'vertical.mp4'
+      ]);
+
+      let vData;
+      try {
+        vData = await ffmpeg.readFile('vertical.mp4');
+      } catch {
+        await ffmpeg.exec([
+          '-i', `input.${ext}`,
+          '-vf', `crop=${cropVW}:${cropVH}:${vSrcX}:0`,
+          '-c:v', 'libx264', '-crf', '14', '-preset', 'fast',
+          '-c:a', 'aac', '-b:a', '192k',
+          'vertical_fb.mp4'
+        ]);
+        vData = await ffmpeg.readFile('vertical_fb.mp4');
+      }
+
+      procBar.style.width = '95%';
+      procStep.textContent = 'FINALISING';
+
+      // Create download links
+      const hBlob = new Blob([hData.buffer], { type: 'video/mp4' });
+      const vBlob = new Blob([vData.buffer], { type: 'video/mp4' });
+
+      document.getElementById('dlH').href = URL.createObjectURL(hBlob);
+      document.getElementById('dlV').href = URL.createObjectURL(vBlob);
+      document.getElementById('dlHmeta').textContent =
+        `${cropHW}×${cropHH} · ${(hBlob.size/1048576).toFixed(1)}MB`;
+      document.getElementById('dlVmeta').textContent =
+        `${cropVW}×${cropVH} · ${(vBlob.size/1048576).toFixed(1)}MB`;
+
+      // Clean up FFmpeg virtual FS
+      try {
+        await ffmpeg.deleteFile(`input.${ext}`);
+        await ffmpeg.deleteFile('horizontal.mp4');
+        await ffmpeg.deleteFile('vertical.mp4');
+      } catch {}
+
+      procBar.style.width = '100%';
+      document.getElementById('statusTxt').textContent = 'READY';
+      document.getElementById('iconGuide').style.display = 'none';
+      document.getElementById('iconDl').style.display = 'block';
+
+      setTimeout(() => {
+        proc.classList.remove('show');
+        document.getElementById('dlSheet').classList.add('open');
+        toast('Native quality videos ready!');
+      }, 400);
+
+    } catch (err) {
+      console.error('FFmpeg error:', err);
+      // Fallback: serve raw recording as horizontal, skip vertical crop
+      procSub.textContent = 'FFmpeg unavailable — serving raw recording…';
+      procBar.style.width = '100%';
+
+      const mime = rawRecorder.mimeType || 'video/webm';
+      const ext = mime.includes('mp4') ? 'mp4' : 'webm';
+      const rawBlob = new Blob(rawChunks, { type: mime });
+      document.getElementById('dlH').href = URL.createObjectURL(rawBlob);
+      document.getElementById('dlH').download = `horizontal_raw.${ext}`;
+      document.getElementById('dlHmeta').textContent = `Raw · ${(rawBlob.size/1048576).toFixed(1)}MB`;
+      document.getElementById('dlVmeta').textContent = 'See horizontal (fallback)';
+      document.getElementById('statusTxt').textContent = 'READY';
+      document.getElementById('iconGuide').style.display = 'none';
+      document.getElementById('iconDl').style.display = 'block';
+
+      setTimeout(() => {
+        proc.classList.remove('show');
+        document.getElementById('dlSheet').classList.add('open');
+        toast('FFmpeg failed — raw video available');
+      }, 800);
+    }
   }
 
-  // ── Button events ──
-  document.getElementById('btnRecord').addEventListener('click', ()=>{
+  // ── Buttons ──
+  document.getElementById('btnRecord').addEventListener('click', () => {
     if (!stream) return;
     recording ? stopRecording() : startRecording();
   });
 
-  document.getElementById('btnFlip').addEventListener('click', async ()=>{
-    if (recording){toast('Stop recording first');return;}
-    facingMode=facingMode==='environment'?'user':'environment';
-    toast(facingMode==='user'?'Front camera':'Rear camera');
+  document.getElementById('btnFlip').addEventListener('click', async () => {
+    if (recording) { toast('Stop recording first'); return; }
+    facingMode = facingMode === 'environment' ? 'user' : 'environment';
+    toast(facingMode === 'user' ? 'Front camera' : 'Rear camera');
     await initCamera(facingMode);
   });
 
-  document.getElementById('btnAction').addEventListener('click', ()=>{
-    if (hasRecording && !recording) {
+  document.getElementById('btnAction').addEventListener('click', () => {
+    const hasDl = document.getElementById('iconDl').style.display !== 'none';
+    if (hasDl) {
       document.getElementById('dlSheet').classList.add('open');
     } else {
-      guideOn=!guideOn;
-      toast(guideOn?'Guide on':'Guide off');
+      guideOn = !guideOn;
+      toast(guideOn ? 'Guide on' : 'Guide off');
     }
   });
 
-  document.getElementById('btnDone').addEventListener('click', ()=>{
+  document.getElementById('btnDone').addEventListener('click', () => {
     document.getElementById('dlSheet').classList.remove('open');
   });
 
   // Swipe sheet down to close
-  const sheet=document.getElementById('dlSheet');
-  let sy0=0;
-  sheet.addEventListener('touchstart',e=>{sy0=e.touches[0].clientY;},{passive:true});
-  sheet.addEventListener('touchmove',e=>{
-    const dy=e.touches[0].clientY-sy0;
-    if(dy>0) sheet.style.transform=`translateY(${dy}px)`;
-  },{passive:true});
-  sheet.addEventListener('touchend',e=>{
-    sheet.style.transform='';
-    if(e.changedTouches[0].clientY-sy0>80) sheet.classList.remove('open');
+  const sheet = document.getElementById('dlSheet');
+  let sy0 = 0;
+  sheet.addEventListener('touchstart', e => { sy0 = e.touches[0].clientY; }, { passive: true });
+  sheet.addEventListener('touchmove', e => {
+    const dy = e.touches[0].clientY - sy0;
+    if (dy > 0) sheet.style.transform = `translateY(${dy}px)`;
+  }, { passive: true });
+  sheet.addEventListener('touchend', e => {
+    sheet.style.transform = '';
+    if (e.changedTouches[0].clientY - sy0 > 80) sheet.classList.remove('open');
   });
 
   // ── Init ──
-  document.getElementById('btnAllow').addEventListener('click', async ()=>{
-    const btn=document.getElementById('btnAllow');
-    btn.textContent='Opening…'; btn.disabled=true;
-    const ok=await initCamera(facingMode);
-    if(ok){
-      const o=document.getElementById('initOverlay');
+  document.getElementById('btnAllow').addEventListener('click', async () => {
+    const btn = document.getElementById('btnAllow');
+    btn.textContent = 'Opening…'; btn.disabled = true;
+    const ok = await initCamera(facingMode);
+    if (ok) {
+      const o = document.getElementById('initOverlay');
       o.classList.add('hide');
-      setTimeout(()=>o.remove(),380);
+      setTimeout(() => o.remove(), 380);
     } else {
-      document.getElementById('initErr').textContent='Camera denied — check permissions';
-      btn.textContent='Try Again'; btn.disabled=false;
+      document.getElementById('initErr').textContent = 'Camera denied — check permissions';
+      btn.textContent = 'Try Again'; btn.disabled = false;
     }
   });
 </script>
